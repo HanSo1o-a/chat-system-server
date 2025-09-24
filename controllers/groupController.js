@@ -1,14 +1,18 @@
-const { addGroup, getGroup, getAllGroups, deleteGroup,addAdmin, }  = require('../models/group'); // 使用模型中的方法
-const { getUser,becomeAdminRole,becomeUserRole } = require('../controllers/userController'); // 假设用户信息存储在内存中
+// src/app/controllers/groupController.js
+const Group = require('../models/group');
+const User = require('../models/user');
+const Channel = require('../models/channel');
 
-
+// Permission check: Verify if the user is an admin or superadmin
 const checkAdminOrSuperadmin = async (req) => {
   let userRole;
 
+  // If req.user exists, directly get the role from req.user
   if (req.user && req.user.roles) {
     userRole = req.user.roles[0];
   }
 
+  // Check user role, ensuring it is either admin or superadmin
   if (userRole === 'superadmin' || userRole === 'admin') {
     return userRole;
   }
@@ -16,135 +20,204 @@ const checkAdminOrSuperadmin = async (req) => {
   throw new Error('Access denied. You need to be an admin or superadmin to perform this action.');
 };
 
-// 获取所有群组
-exports.getAllGroups = async (req, res) => {
+const getGroupChannels = async (req, res) => {
   try {
-   
-    const groups = getAllGroups();  // 通过模型获取所有群组
-    res.status(200).json(groups);
+    const group = await Group.findById(req.params.groupId).populate('channels');
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    res.json(group.channels);
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ error: err.message });
   }
 };
 
-// 获取用户管理的群组
-exports.getAdminGroups = async (req, res) => {
+// Get all groups with role-based access
+const getAllGroups = async (req, res) => {
   try {
-    await checkAdminOrSuperadmin(req);  // 检查权限
-    const userId = req.params.userId;
-    
-    const groups = getAllGroups().filter(group => group.admins.includes(userId));
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
 
-    if (!groups.length) {
-      return res.status(404).json({ success: false, message: 'No groups found for this admin.' });
+    let groups;
+
+    if (req.user.roles.includes('superadmin')) {
+      // ✅ Superadmin: can view all groups
+      groups = await Group.find()
+        .populate('admins', 'username')
+        .populate('members', 'username')
+        .populate('channels', 'name description');
+    } else if (req.user.roles.includes('admin')) {
+      // ✅ Admin: can view groups they manage or belong to
+      groups = await Group.find({
+        $or: [{ admins: req.user._id }, { members: req.user._id }]
+      })
+        .populate('admins', 'username')
+        .populate('members', 'username')
+        .populate('channels', 'name description');
+    } else {
+      // ✅ Regular user: can only view groups they belong to
+      groups = await Group.find({ members: req.user._id })
+        .populate('admins', 'username')
+        .populate('members', 'username')
+        .populate('channels', 'name description');
     }
 
     res.status(200).json(groups);
   } catch (err) {
+    console.error('[getAllGroups] Error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
-// Create Group
-exports.createGroup = async (req, res) => {
-  try {
-    const userRole = await checkAdminOrSuperadmin(req);  // Check role
 
-    const { name, description, adminIds } = req.body;
-    if (!name) {
-      return res.status(400).json({ success: false, message: "Group name is required" });
-    }
-
-    let group = {
-      id: Date.now(),
-      name,
-      description,
-      admins: [],
-      members: [],
-      channels: []
-    };
-
-    if (userRole === "admin") {
-      group.admins = [req.user.username];
-    } 
-
-    await addGroup(group);  // Save the group
-    return res.status(200).json({ success: true, group });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
-  }
-};
-
-// 删除群组
-exports.deleteGroup = async (req, res) => {
+// Get groups managed by the user (filtered by admin role)
+const getAdminGroups = async (req, res) => {
   try {
     await checkAdminOrSuperadmin(req);
-    const groupId = req.params.id;
-    
 
-    deleteGroup(groupId);  // 使用模型删除群组
-    res.status(200).json({ success: true });
+    const userId = req.params.userId;
+    const groups = await Group.find({ admins: userId })
+      .populate('admins', 'username')
+      .populate('members', 'username')
+      .populate('channels', 'name description');
+
+    if (!groups) {
+      return res.status(404).json({ success: false, message: 'No groups found for this admin.' });
+    }
+    res.status(200).json(groups);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// 添加成员到群组
-exports.addMemberToGroup = async (req, res) => {
+// Create new group
+const createGroup = async (req, res) => {
   try {
-    await checkAdminOrSuperadmin(req); 
+    await checkAdminOrSuperadmin(req);  // Permission check inside controller
 
-    const { groupId, userId } = req.body;
-    let group = getGroup(groupId);
+    const { name, description, adminIds } = req.body;
+    const group = new Group({
+      name,
+      description,
+      admins: adminIds,  // Admin ID array
+      members: adminIds,  // Initially, admins are also members
+    });
 
-    if (!group) {
-      return res.status(404).json({ success: false, message: 'Group not found' });
-    }
-
-    if (!group.members.includes(userId)) {
-      group.members.push(userId);  // 将用户添加到群组成员列表
-    }
-
-
+    await group.save();
     res.status(200).json({ success: true, group });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// 添加管理员到群组
-exports.addAdminToGroup = async (req, res) => {
+// Delete group
+const deleteGroup = async (req, res) => {
   try {
-    await checkAdminOrSuperadmin(req); 
+    await checkAdminOrSuperadmin(req);
 
-    const { groupId, userId } = req.body;
-
-    addAdmin(groupId, userId);  
-    becomeAdminRole(userId);
+    const groupId = req.params.id;
+    await Group.findByIdAndDelete(groupId);
     res.status(200).json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// 从群组中移除管理员
-exports.removeAdminFromGroup = async (req, res) => {
+// Add member to group
+const addMemberToGroup = async (req, res) => {
   try {
-    await checkAdminOrSuperadmin(req); 
+    await checkAdminOrSuperadmin(req);
 
     const { groupId, userId } = req.body;
-    let group = getGroup(groupId);
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({ success: false, message: 'Group not found' });
+    }
+
+    if (!group.members.includes(userId)) {
+      group.members.push(userId);  // Add user to members
+      await group.save();
+      res.status(200).json({ success: true, group });
+    } else {
+      res.status(400).json({ success: false, message: 'User is already a member' });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Add admin to group
+const addAdminToGroup = async (req, res) => {
+  try {
+    await checkAdminOrSuperadmin(req);
+
+    const { groupId, userId } = req.body;
+    const group = await Group.findById(groupId);
+    const user = await User.findById(userId);
 
     if (!group) {
       return res.status(404).json({ success: false, message: 'Group not found' });
     }
 
-    if (group.admins.includes(userId)) {
-      group.admins = group.admins.filter(admin => admin !== userId); 
-      const otherGroups = getAllGroups().filter(g => g.id !== groupId && g.admins.includes(userId));
-      
-      if (otherGroups.length==0)
-      {
-        becomeUserRole(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Add as admin if not already
+    if (!group.admins.includes(userId)) {
+      group.admins.push(userId);
+      // Remove from members list if present
+      const memberIndex = group.members.indexOf(userId);
+      if (memberIndex !== -1) {
+        group.members.splice(memberIndex, 1);
+      }
+      await group.save();
+
+      // Update user role to admin if needed
+      if (user.roles[0] === 'user') {
+        user.roles[0] = 'admin';
+        await user.save();
+      }
+
+      res.status(200).json({ success: true, group });
+    } else {
+      res.status(400).json({ success: false, message: 'User is already an admin' });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Remove admin from group
+const removeAdminFromGroup = async (req, res) => {
+  try {
+    await checkAdminOrSuperadmin(req);
+
+    const { groupId, userId } = req.body;
+    const group = await Group.findById(groupId);
+    const user = await User.findById(userId);
+
+    if (!group) {
+      return res.status(404).json({ success: false, message: 'Group not found' });
+    }
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Remove user from admins
+    const adminIndex = group.admins.indexOf(userId);
+    if (adminIndex !== -1) {
+      group.admins.splice(adminIndex, 1);
+      await group.save();
+
+      // Check if user is still admin in other groups/channels
+      const otherGroups = await Group.find({ admins: userId });
+      const otherChannels = await Channel.find({ admins: userId });
+      if (otherGroups.length === 0 && otherChannels.length === 0) {
+        if (user.roles[0] === 'admin') {
+          user.roles[0] = 'user';
+          await user.save();
+        }
       }
 
       res.status(200).json({ success: true, group });
@@ -156,20 +229,21 @@ exports.removeAdminFromGroup = async (req, res) => {
   }
 };
 
-// 从群组中移除成员
-exports.removeMemberFromGroup = async (req, res) => {
+// Remove member from group
+const removeMemberFromGroup = async (req, res) => {
   try {
-    await checkAdminOrSuperadmin(req);  // 检查权限
+    await checkAdminOrSuperadmin(req);
 
     const { groupId, userId } = req.body;
-    let group = getGroup(groupId);
-
+    const group = await Group.findById(groupId);
     if (!group) {
       return res.status(404).json({ success: false, message: 'Group not found' });
     }
 
-    if (group.members.includes(userId)) {
-      group.members = group.members.filter(member => member !== userId);  // 从成员列表中移除用户
+    const memberIndex = group.members.indexOf(userId);
+    if (memberIndex !== -1) {
+      group.members.splice(memberIndex, 1);  // Remove from members
+      await group.save();
       res.status(200).json({ success: true, group });
     } else {
       res.status(400).json({ success: false, message: 'User is not a member' });
@@ -179,71 +253,122 @@ exports.removeMemberFromGroup = async (req, res) => {
   }
 };
 
-// 从群组中移除频道
-exports.deleteChannelFromGroup = async (req, res) => {
-  try {
-    await checkAdminOrSuperadmin(req);  // 检查权限
+// Create a channel inside a group
+const createChannelInGroup = async (req, res) => {
+  const { groupId } = req.params;
+  const { name, description } = req.body;
 
-    const { groupId, channelId } = req.body;
-    
-    // 获取群组
-    let group = getGroup(groupId);
-    
+  try {
+    const group = await Group.findById(groupId);
     if (!group) {
       return res.status(404).json({ success: false, message: 'Group not found' });
     }
 
-    // 查找并移除指定频道
-    group.channels = group.channels.filter(channel => channel.id !== channelId);  // Remove channel by ID
+    const channel = new Channel({ name, description, group: groupId });
+    await channel.save();
 
-    // 返回成功信息
-    res.status(200).json({ success: true, message: 'Channel removed successfully', group });
+    group.channels.push(channel._id);
+    await group.save();
+
+    res.json({ success: true, channel });
   } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({ success: false, message: 'Channel name already exists in this group!' });
+    }
+    console.error('[createChannelInGroup] Error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-exports.addChannelToGroup = async (channel, groupId) => {
+// Delete a channel from a group
+const deleteChannelInGroup = async (req, res) => {
+  const { groupId, channelId } = req.params;
 
   try {
-
-    let group = getGroup(groupId);
-    
-
+    const group = await Group.findById(groupId);
     if (!group) {
-      return res.status(404).json({ message: 'Group not found' });
+      return res.status(404).json({ success: false, message: 'Group not found' });
     }
 
-    group.channels.push(channel);
+    // Remove channel reference from group
+    group.channels = group.channels.filter(ch => ch.toString() !== channelId);
+    await group.save();
 
-  } catch (error) {
-    res.status(500).json({ message: 'Error adding channel to group', error });
-  }
-};
+    // Delete channel document
+    await Channel.findByIdAndDelete(channelId);
 
-// Exit a group
-exports.exitGroup = async (req, res) => {
-  try {
-    const { groupId, username } = req.body;  // Get groupId and username from the request body
-
-    const group = await getGroup(groupId);  // Fetch the group using groupId
-    if (!group) {
-      return res.status(404).json({ message: 'Group not found' });
-    }
-
-    // Ensure the user is either an admin or a member of the group
-    if (!group.admins.includes(username) && !group.members.includes(username)) {
-      return res.status(400).json({ message: 'User is not part of this group' });
-    }
-
-    // Remove the user from the group (both admins and members)
-    group.admins = group.admins.filter(admin => admin !== username);
-    group.members = group.members.filter(member => member !== username);
-
-
-    res.status(200).json({ success: true, message: 'Exited the group successfully' });
+    res.json({ success: true, message: 'Channel deleted successfully' });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Error exiting the group' });
+    console.error('[deleteChannelInGroup] Error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
+// Regular user leaves a group
+const leaveGroup = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { groupId } = req.params;
+
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({ success: false, message: 'Group not found' });
+    }
+
+    // If user is a member, remove them
+    group.members = group.members.filter(m => m.toString() !== userId);
+
+    await group.save();
+
+    res.json({ success: true, message: 'Left group successfully' });
+  } catch (err) {
+    console.error('[leaveGroup] Error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Admin leaves a group
+const leaveGroupAdmin = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { groupId } = req.params;
+
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({ success: false, message: 'Group not found' });
+    }
+
+    // If user is an admin, remove them
+    group.admins = group.admins.filter(a => a.toString() !== userId);
+    await group.save();
+
+    // Check if user is still admin in other groups
+    const otherAdminGroups = await Group.find({ admins: userId });
+    if (otherAdminGroups.length === 0) {
+      // If not admin anywhere else, downgrade to user
+      await User.findByIdAndUpdate(userId, { roles: ['user'] });
+    }
+
+    res.json({ success: true, message: 'Left group as admin successfully' });
+  } catch (err) {
+    console.error('[leaveGroupAdmin] Error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = {
+  checkAdminOrSuperadmin,
+  getAllGroups,
+  getAdminGroups,
+  createGroup,
+  deleteGroup,
+  addMemberToGroup,
+  addAdminToGroup,
+  removeAdminFromGroup,
+  removeMemberFromGroup,
+  getGroupChannels,
+  createChannelInGroup,
+  deleteChannelInGroup,
+  leaveGroupAdmin,
+  leaveGroup
+};
