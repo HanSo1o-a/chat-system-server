@@ -1,51 +1,15 @@
-let users = [{
-  username:'superadmin',
-  email: 'nZ9Oz@example.com',
-  password: '123', 
-  roles: ['superadmin'] }
-]; 
+// server/models/user.js
+const mongoose = require('mongoose');
 
-// 添加用户
-const addUser = (user) => {
-  users.push(user);
-  return user;
-};
+// Define the user model
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true }, // Username, unique
+  email: { type: String, required: true, unique: true },    // Email, unique
+  password: { type: String, required: true },               // Password
+  roles: { type: [String], default: ['user'] },             // Roles, default is 'user'
+  groups: { type: [String], default: [] },                  // Groups, groups the user is a part of
+});
 
-// 获取用户
-const getUsername = (username) => {
-  return users.find(user => user.username === username);
-};
-
-const getUserID = (userId) => {
-  return users.find(user => user.id === userId);
-};
-
-// 获取所有用户
-const getAllUsers = () => {
-  return users;
-};
-
-
-const updateUsername = (oldUsername, newUsername) => {
-  const user = users.find(user => user.username === oldUsername);
-
-  if (!user) {
-    throw new Error('User not found');
-  }
-
-  // Check if the new username is already taken
-  const existingUser = users.find(user => user.username === newUsername);
-  if (existingUser) {
-    throw new Error('Username already taken');
-  }
-
-  // Update the username
-  user.username = newUsername;
-
-  
-
-  return user;
-};
-
-
-module.exports = { addUser, getUsername,getUserID, getAllUsers,updateUsername };
+// Create and export the user model
+const User = mongoose.model('User', userSchema);
+module.exports = User;
