@@ -1,16 +1,17 @@
+// src/routes/userRoutes.js
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
+const verifyToken = require('../middleware/verifyToken');  // Import verifyToken middleware
 
-// 用户注册
+// Register user
 router.post('/register', userController.registerUser);
 
-// 获取所有用户
-router.get('/users', userController.getAllUsers);
+// Get all users
+router.get('/users', verifyToken, userController.getAllUsers);
 
-// 用户登录
-router.post('/login', userController.loginUser);  // 登录路由
-
-router.post('/update-username', userController.updateUsername);  // 登录路由
+// Login user
+router.post('/login', userController.loginUser);  // Added login route
+router.get('/getUsernameByPeerId/:peerId', userController.getUsernameByPeerId);
 
 module.exports = router;

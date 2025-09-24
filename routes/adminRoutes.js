@@ -1,33 +1,33 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
-const authMiddleware = require('../middleware/authMiddleware'); 
-const userController = require('../controllers/userController'); 
+const authMiddleware = require('../middleware/authMiddleware'); // Middleware to verify permissions
 
-// 创建频道
-router.post('/create',authMiddleware, adminController.createChannel);
+// Create channel
+router.post('/create', authMiddleware, adminController.createChannel);
 
-// 删除频道
-router.post('/channels/delete',authMiddleware, adminController.deleteChannel);
+// Delete channel
+router.post('/channels/delete', authMiddleware, adminController.deleteChannel);
 
-// 获取所有频道
-router.get('/',authMiddleware, adminController.getAllChannels);
+// Get all channels
+router.get('/', authMiddleware, adminController.getAllChannels);
 
-// 获取所有用户
-router.get('/users',authMiddleware, adminController.getAllUsers); 
+// Get all users
+router.get('/users', authMiddleware, adminController.getAllUsers); 
 
-// 添加管理员到频道
-router.post('/add-admin',authMiddleware, adminController.addAdmin);
+// Add admin to channel
+router.post('/add-admin', authMiddleware, adminController.addAdmin);
 
-// 从频道中移除管理员
-router.post('/remove-admin',authMiddleware, adminController.removeAdmin);
+// Remove admin from channel
+router.post('/remove-admin', authMiddleware, adminController.removeAdmin);
 
-// 添加成员到频道
-router.post('/add-member',authMiddleware, adminController.addMember);
+// Add member to channel
+router.post('/add-member', authMiddleware, adminController.addMember);
 
-// 从频道中移除成员
-router.post('/remove-member',authMiddleware, adminController.removeMember);
+// Remove member from channel
+router.post('/remove-member', authMiddleware, adminController.removeMember);
 
-router.post('/update-role',authMiddleware, userController.updateUserRole);
+// Update user role
+router.post('/update-role', authMiddleware, adminController.updateUserRole);
 
 module.exports = router;

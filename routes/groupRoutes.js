@@ -1,34 +1,45 @@
 const express = require('express');
 const router = express.Router();
 const groupController = require('../controllers/groupController');
-const authMiddleware = require('../middleware/authMiddleware'); 
-// 获取所有群组
-router.get('/all',authMiddleware, groupController.getAllGroups);
+const authMiddleware = require('../middleware/authMiddleware');
 
-// 获取用户管理的群组（通过管理员角色过滤）
-router.get('/admin/:userId', authMiddleware,groupController.getAdminGroups);
+// Get all groups
+router.get('/all', authMiddleware, groupController.getAllGroups);
 
-// 创建新群组
-router.post('/create', authMiddleware,groupController.createGroup);
+// Get groups managed by the user (filtered by admin role)
+router.get('/admin/:userId', authMiddleware, groupController.getAdminGroups);
 
-// 删除群组
-router.delete('/delete/:id',authMiddleware, groupController.deleteGroup);
+// Get all channels in a group
+router.get('/:groupId/channels', groupController.getGroupChannels);
 
-// 向群组添加成员
-router.post('/add-member', authMiddleware,groupController.addMemberToGroup);
+// Create a new group
+router.post('/create', authMiddleware, groupController.createGroup);
 
-// 向群组添加管理员
-router.post('/add-admin', authMiddleware,groupController.addAdminToGroup);
+// Delete a group
+router.delete('/delete/:id', authMiddleware, groupController.deleteGroup);
 
-// 从群组中移除管理员
-router.post('/remove-admin', authMiddleware,groupController.removeAdminFromGroup);
+// Add a member to a group
+router.post('/add-member', authMiddleware, groupController.addMemberToGroup);
 
-// 从群组中移除成员
-router.post('/remove-member',authMiddleware, groupController.removeMemberFromGroup);
+// Add an admin to a group
+router.post('/add-admin', authMiddleware, groupController.addAdminToGroup);
 
-router.post('/delete-channel',authMiddleware, groupController.deleteChannelFromGroup);
+// Remove an admin from a group
+router.post('/remove-admin', authMiddleware, groupController.removeAdminFromGroup);
 
+// Remove a member from a group
+router.post('/remove-member', authMiddleware, groupController.removeMemberFromGroup);
 
-router.post('/exit-group', groupController.exitGroup);
+// Create a new channel inside a group
+router.post('/:groupId/channels/create', authMiddleware, groupController.createChannelInGroup);
+
+// Delete a channel inside a group
+router.delete('/:groupId/channels/delete/:channelId', authMiddleware, groupController.deleteChannelInGroup);
+
+// Leave group as an admin
+router.post('/:groupId/leaveAdmin', authMiddleware, groupController.leaveGroupAdmin);
+
+// Leave group as a member
+router.post('/:groupId/leave', authMiddleware, groupController.leaveGroup);
 
 module.exports = router;

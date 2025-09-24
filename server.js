@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const userRoutes = require('./routes/userRoutes');
 const cors = require('cors');  // Import CORS middleware
@@ -13,8 +14,15 @@ const path = require('path');
 const { PeerServer } = require('peer');
 const fs = require('fs');
 
-const server = http.createServer( app);
+// Use self-signed certificate for HTTPS setup
+const options = {
+  key: fs.readFileSync('./server/private.key'), // Private key
+  cert: fs.readFileSync('./server/certificate.crt'), // Certificate
+};
 
+const server = http.createServer(options, app);
+// Peer.js configuration
+const peerServer = PeerServer({ path: '/peerjs', port: 9000, secure: true });
 
 // Configure Socket.io
 socketConfig(server);
@@ -25,6 +33,14 @@ app.use(cors({
   credentials: true,  // Allow credentials (like Cookies or authorization headers)
 }));
 
+// Connect to MongoDB (you can use this URL if you have a MongoDB instance, skipping this part for now)
+mongoose.connect('mongodb://localhost:27017/chat-system', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('MongoDB connected'))
+.catch(err => console.log(err));
+
 // Middleware
 app.use(bodyParser.json());
 
@@ -33,12 +49,11 @@ app.use('/api', userRoutes);  // User routes
 app.use('/api/channels', channelRoutes);  // Add channel-related routes
 app.use('/api/admin', adminRoutes);
 app.use('/api/groups', groupRoutes);
-
-// Serve uploaded files
-app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
-
+app.use('/uploads', (req, res, next) => {
+  next();
+}, express.static(path.join(__dirname, 'public', 'uploads')));
 // Start the server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
